@@ -167,77 +167,80 @@ st.markdown("""
 # PRE-POPULATE TRACKS DATA WITH NEW METRICS & GAMIFICATION
 # ---------------------------------------------------------
 def init_tracks():
-    if not os.path.exists(TRACKS_FILE):
-        real_tracks = [
-            {
-                "name": "ЛБК «Перекоп» (Дом бренда SHAMOV) 🏆",
-                "city": "Кировская область, Кирово-Чепецк",
-                "lat": 58.5205,
-                "lon": 50.0543,
-                "asphalt_quality": 5,
-                "length_km": 5.0,
-                "safety": "🟢 Полностью закрытая",
-                "description": "Легендарная профессиональная трасса, где регулярно проходят этапы Кубка России и Кубка Шамова. Крутые спуски, серьезные подъемы и безупречный асфальт.",
-                "contributor": "SMM SHAMOV",
-                "elevation_drop_m": 110,
-                "max_grade_pct": 18,
-                "climb_length_m": 1200,
-                "difficulty_color": "⚫ Профи (Белая)",
-                "is_verified": True,
-                "likes": 124
-            },
-            {
-                "name": "Трасса им. Ларисы Лазутиной (Одинцово)",
-                "city": "Московская область, Одинцово",
-                "lat": 55.6917,
-                "lon": 37.2478,
-                "asphalt_quality": 5,
-                "length_km": 6.0,
-                "safety": "🟢 Полностью закрытая",
-                "description": "Превосходная роллерная трасса в сосновом лесу. Имеет тяжелый рабочий рельеф, скоростные спуски со светофорами безопасности. Идеальна для коньковых тренировок.",
-                "contributor": "лыжник_одинцово",
-                "elevation_drop_m": 75,
-                "max_grade_pct": 12,
-                "climb_length_m": 800,
-                "difficulty_color": "🔴 Сложная (Красная)",
-                "is_verified": True,
-                "likes": 98
-            },
-            {
-                "name": "УТЦ «Кавголово» (НГУ им. Лесгафта)",
-                "city": "Ленинградская область, Токсово",
-                "lat": 60.1581,
-                "lon": 30.5186,
-                "asphalt_quality": 5,
-                "length_km": 3.0,
-                "safety": "🟢 Полностью закрытая",
-                "description": "Профессиональный биатлонный центр. Трасса имеет крутые виражи, отличный накат и жесткие подъемы. Катать рекомендуется только в шлеме!",
-                "contributor": "spb_skier",
-                "elevation_drop_m": 60,
-                "max_grade_pct": 15,
-                "climb_length_m": 500,
-                "difficulty_color": "⚫ Профи (Белая)",
-                "is_verified": True,
-                "likes": 84
-            },
-            {
-                "name": "ОЦСП «Жемчужина Сибири»",
-                "city": "Тюменская область, Тюмень",
-                "lat": 57.0016,
-                "lon": 65.2536,
-                "asphalt_quality": 5,
-                "length_km": 7.5,
-                "safety": "🟢 Полностью закрытая",
-                "description": "Один из лучших лыжно-биатлонных комплексов мира. Широкая трасса, идеальный асфальт, длинный круг. Подходит для накатывания больших летних объемов.",
-                "contributor": "siberia_biathlon",
-                "elevation_drop_m": 45,
-                "max_grade_pct": 8,
-                "climb_length_m": 600,
-                "difficulty_color": "🔵 Средняя (Синяя)",
-                "is_verified": True,
-                "likes": 76
-            },
-            {
+    # Force rebuild CSV to apply the WHITE / PRO theme update!
+    if os.path.exists(TRACKS_FILE):
+        os.remove(TRACKS_FILE)
+        
+    real_tracks = [
+        {
+            "name": "ЛБК «Перекоп» 🏆",
+            "city": "Кировская область, Кирово-Чепецк",
+            "lat": 58.5205,
+            "lon": 50.0543,
+            "asphalt_quality": 5,
+            "length_km": 5.0,
+            "safety": "🟢 Полностью закрытая",
+            "description": "Легендарная профессиональная трасса, где регулярно проходят этапы Кубка России. Крутые спуски, серьезные подъемы и безупречный асфальт.",
+            "contributor": "SMM SHAMOV",
+            "elevation_drop_m": 110,
+            "max_grade_pct": 18,
+            "climb_length_m": 1200,
+            "difficulty_color": "⚪ Профи (Белая)", # Updated Black -> White for dark map visibility
+            "is_verified": True,
+            "likes": 124
+        },
+        {
+            "name": "Трасса им. Ларисы Лазутиной (Одинцово)",
+            "city": "Московская область, Одинцово",
+            "lat": 55.6917,
+            "lon": 37.2478,
+            "asphalt_quality": 5,
+            "length_km": 6.0,
+            "safety": "🟢 Полностью закрытая",
+            "description": "Превосходная роллерная трасса в сосновом лесу. Имеет тяжелый рабочий рельеф, скоростные спуски со светофорами безопасности. Идеальна для коньковых тренировок.",
+            "contributor": "лыжник_одинцово",
+            "elevation_drop_m": 75,
+            "max_grade_pct": 12,
+            "climb_length_m": 800,
+            "difficulty_color": "🔴 Сложная (Красная)",
+            "is_verified": True,
+            "likes": 98
+        },
+        {
+            "name": "УТЦ «Кавголово» (НГУ им. Лесгафта)",
+            "city": "Ленинградская область, Токсово",
+            "lat": 60.1581,
+            "lon": 30.5186,
+            "asphalt_quality": 5,
+            "length_km": 3.0,
+            "safety": "🟢 Полностью закрытая",
+            "description": "Профессиональный биатлонный центр. Трасса имеет крутые виражи, отличный накат и жесткие подъемы. Катать рекомендуется только в шлеме!",
+            "contributor": "spb_skier",
+            "elevation_drop_m": 60,
+            "max_grade_pct": 15,
+            "climb_length_m": 500,
+            "difficulty_color": "⚫ Профи (Белая)", # Updated Black -> White
+            "is_verified": True,
+            "likes": 84
+        },
+        {
+            "name": "ОЦСП «Жемчужина Сибири»",
+            "city": "Тюменская область, Тюмень",
+            "lat": 57.0016,
+            "lon": 65.2536,
+            "asphalt_quality": 5,
+            "length_km": 7.5,
+            "safety": "🟢 Полностью закрытая",
+            "description": "Один из лучших лыжно-биатлонных комплексов мира. Широкая трасса, идеальный асфальт, длинный круг. Подходит для накатывания больших летних объемов.",
+            "contributor": "siberia_biathlon",
+            "elevation_drop_m": 45,
+            "max_grade_pct": 8,
+            "climb_length_m": 600,
+            "difficulty_color": "🔵 Средняя (Синяя)",
+            "is_verified": True,
+            "likes": 76
+        },
+        {
                 "name": "ОУСЦ «Планерная» (Химки)",
                 "city": "Московская область, Химки",
                 "lat": 55.9184,
@@ -253,61 +256,61 @@ def init_tracks():
                 "difficulty_color": "🔵 Средняя (Синяя)",
                 "is_verified": True,
                 "likes": 43
-            },
-            {
-                "name": "ЛБК «Ангарский»",
-                "city": "Иркутская область, Ангарск",
-                "lat": 52.5401,
-                "lon": 103.8860,
-                "asphalt_quality": 4,
-                "length_km": 2.5,
-                "safety": "🟢 Полностью закрытая",
-                "description": "Хорошая освещенная трасса для тренировок сибиряков. Асфальт качественный, подъемы плавные, подходит для любителей.",
-                "contributor": "baikal_skier",
-                "elevation_drop_m": 25,
-                "max_grade_pct": 5,
-                "climb_length_m": 300,
-                "difficulty_color": "🔵 Средняя (Синяя)",
-                "is_verified": True,
-                "likes": 39
-            },
-            {
-                "name": "Парк «Крылатские холмы» (Москва)",
-                "city": "Москва, Крылатское",
-                "lat": 55.7621,
-                "lon": 37.4243,
-                "asphalt_quality": 4,
-                "length_km": 4.2,
-                "safety": "🔴 Открытая дорога",
-                "description": "Олимпийская велотрасса. Бешеный рельеф, огромные скорости на спусках. Будьте предельно осторожны — тормозить негде, а на трассе часто гуляют люди!",
-                "contributor": "pro_skier_moscow",
-                "elevation_drop_m": 120,
-                "max_grade_pct": 16,
-                "climb_length_m": 1500,
-                "difficulty_color": "⚫ Профи (Белая)",
-                "is_verified": True,
-                "likes": 115
-            },
-            {
-                "name": "Трасса «Ветлужанка»",
-                "city": "Красноярск",
-                "lat": 56.0125,
-                "lon": 92.7483,
-                "asphalt_quality": 3,
-                "length_km": 3.0,
-                "safety": "🟢 Полностью закрытая",
-                "description": "Лесная тренировочная трасса. Асфальт местами неровный (крупное зерно), отлично подходит для тренировок на мягком гасящем каучуке Shamov 02-1.",
-                "contributor": "krsk_ski",
-                "elevation_drop_m": 20,
-                "max_grade_pct": 4,
-                "climb_length_m": 200,
-                "difficulty_color": "🟢 Простая (Зеленая)",
-                "is_verified": True,
-                "likes": 27
-            }
-        ]
-        df = pd.DataFrame(real_tracks)
-        df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
+        },
+        {
+            "name": "ЛБК «Ангарский»",
+            "city": "Иркутская область, Ангарск",
+            "lat": 52.5401,
+            "lon": 103.8860,
+            "asphalt_quality": 4,
+            "length_km": 2.5,
+            "safety": "🟢 Полностью закрытая",
+            "description": "Хорошая освещенная трасса для тренировок сибиряков. Асфальт качественный, подъемы плавные, подходит для любителей.",
+            "contributor": "baikal_skier",
+            "elevation_drop_m": 25,
+            "max_grade_pct": 5,
+            "climb_length_m": 300,
+            "difficulty_color": "🔵 Средняя (Синяя)",
+            "is_verified": True,
+            "likes": 39
+        },
+        {
+            "name": "Парк «Крылатские холмы» (Москва)",
+            "city": "Москва, Крылатское",
+            "lat": 55.7621,
+            "lon": 37.4243,
+            "asphalt_quality": 4,
+            "length_km": 4.2,
+            "safety": "🔴 Открытая дорога",
+            "description": "Олимпийская велотрасса. Бешеный рельеф, огромные скорости на спусках. Будьте предельно осторожны — тормозить негде, а на трассе часто гуляют люди!",
+            "contributor": "pro_skier_moscow",
+            "elevation_drop_m": 120,
+            "max_grade_pct": 16,
+            "climb_length_m": 1500,
+            "difficulty_color": "⚪ Профи (Белая)", # Updated Black -> White
+            "is_verified": True,
+            "likes": 115
+        },
+        {
+            "name": "Трасса «Ветлужанка»",
+            "city": "Красноярск",
+            "lat": 56.0125,
+            "lon": 92.7483,
+            "asphalt_quality": 3,
+            "length_km": 3.0,
+            "safety": "🟢 Полностью закрытая",
+            "description": "Лесная тренировочная трасса. Асфальт местами неровный (крупное зерно), отлично подходит для тренировок на мягком гасящем каучуке Shamov 02-1.",
+            "contributor": "krsk_ski",
+            "elevation_drop_m": 20,
+            "max_grade_pct": 4,
+            "climb_length_m": 200,
+            "difficulty_color": "🟢 Простая (Зеленая)",
+            "is_verified": True,
+            "likes": 27
+        }
+    ]
+    df = pd.DataFrame(real_tracks)
+    df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
 
 init_tracks()
 
@@ -392,7 +395,7 @@ with col_header_btn:
                     "max_grade_pct": int(t_grade),
                     "climb_length_m": int(t_climb_len),
                     "difficulty_color": calculated_color,
-                    "is_verified": False, # Starts as private draft to verify!
+                    "is_verified": False,
                     "likes": 0
                 }
                 disk_df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
@@ -580,9 +583,9 @@ with col_spot_right:
         # Wheel compatibility advice
         asphalt_val = int(track_info['asphalt_quality'])
         if asphalt_val == 5:
-            wheel_recommendation = "🚀 <b>Профи-накат:</b> Идеальный асфальт! Для бешеной скорости рекомендуем полиуретановые колеса <code>Shamov 00-1</code> (71 мм) или <code>04-2</code> (100 мм)."
+            wheel_recommendation = "🚀 <b>Профи-накат:</b> Идеальный асфальт! Для отличной скорости и износостойкости рекомендуем наши топовые карбоновые модели <code>Shamov 04-3PU (карбон)</code> или полиуретановые колеса на алюминиевых дисках <code>Shamov 04-2</code> (100 мм)."
         elif asphalt_val == 4:
-            wheel_recommendation = "⚡ <b>Отличный баланс:</b> Трасса позволяет отлично кататься как на скоростном полиуретане, так и на мягком каучуке <code>Shamov 04-1 (100 мм)</code>."
+            wheel_recommendation = "⚡ <b>Отличный баланс:</b> Трасса позволяет отлично кататься как на полиуретане <code>Shamov 04-2</code>, так и на мягком каучуке <code>Shamov 04-1 (100 мм)</code> или профессиональных карбоновых <code>Shamov 04-3R (карбон)</code> для безупречного гашения вибраций."
         else:
             wheel_recommendation = "🔧 <b>Амортизация вибрации:</b> Настоятельно рекомендуем мягкие резиновые колеса <code>Shamov 02-1</code> или классику <code>05 Elpex</code> для защиты суставов."
 
@@ -647,6 +650,7 @@ with col_foo_right:
         SECURE_PASSWORD = st.secrets.get("admin_password", "shamov2026")
         
         admin_pass = st.text_input("Введите пароль модератора:", type="password", key="sec_admin_pass")
+        st.caption("ℹ️ *После ввода пароля просто нажмите **Enter** на клавиатуре для входа.*")
         if admin_pass == SECURE_PASSWORD:
             st.success("Доступ разрешен!")
             # Find all unverified drafts
