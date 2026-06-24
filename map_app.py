@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import os
-import requests
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime, date
+from datetime import datetime
 
 # Set Page Config (Full width, collapsed sidebar)
 st.set_page_config(
@@ -19,13 +18,45 @@ st.set_page_config(
 # Fallback to local CSV if secrets not configured yet
 # ---------------------------------------------------------
 TRACKS_FILE = "rollerski_tracks_v2.csv"   # резервный локальный файл
-SHEET_NAME  = "shamov_tracks"              # имя листа в Google Таблице
+DEFAULT_SHEET_NAME = "shamov_tracks"     # имя листа по умолчанию
 
 COLUMNS = [
     "name", "city", "lat", "lon", "asphalt_quality", "length_km",
     "safety", "description", "contributor", "elevation_drop_m",
     "max_grade_pct", "climb_length_m", "difficulty_color", "is_verified", "likes"
 ]
+
+def _admin_password():
+    if "admin_password" in st.secrets:
+        return st.secrets["admin_password"]
+    # на случай если пароль положили в секцию [secrets] в Streamlit Cloud
+    if "secrets" in st.secrets and "admin_password" in st.secrets["secrets"]:
+        return st.secrets["secrets"]["admin_password"]
+    return "shamov2026"
+
+
+def _normalize_sheet_url(url):
+    """Убирает лишние #gid=.../edit из ссылки Google Sheets."""
+    return url.split("#")[0].strip().rstrip("/")
+
+
+def _worksheet_name():
+    try:
+        return st.secrets.get("gsheets", {}).get("worksheet", DEFAULT_SHEET_NAME)
+    except Exception:
+        return DEFAULT_SHEET_NAME
+
+
+def _parse_verified(series):
+    """TRUE/FALSE из Google Sheets → bool."""
+    def to_bool(value):
+        if isinstance(value, bool):
+            return value
+        if pd.isna(value):
+            return False
+        return str(value).strip().lower() in ("true", "1", "yes", "да")
+    return series.map(to_bool)
+
 
 def get_gsheet():
     """Возвращает объект worksheet или None если secrets не настроены."""
@@ -37,11 +68,56 @@ def get_gsheet():
         ]
         creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
         client = gspread.authorize(creds)
-        sheet_url = st.secrets["gsheets"]["url"]
+        sheet_url = _normalize_sheet_url(st.secrets["gsheets"]["url"])
         spreadsheet = client.open_by_url(sheet_url)
-        return spreadsheet.worksheet(SHEET_NAME)
-    except Exception:
+        ws_name = _worksheet_name()
+        try:
+            ws = spreadsheet.worksheet(ws_name)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = spreadsheet.sheet1
+            st.session_state["_sheet_fallback"] = (
+                f"Лист «{ws_name}» не найден — используется «{ws.title}»"
+            )
+        st.session_state["_active_sheet"] = ws.title
+        return ws
+    except Exception as exc:
+        st.session_state["_gsheet_error"] = str(exc)
         return None
+
+
+def sheets_status():
+    """Краткий статус подключения к Google Sheets."""
+    try:
+        ws = get_gsheet()
+        if ws is not None:
+            return "connected", "Google Sheets подключён"
+        if "gcp_service_account" in st.secrets and "gsheets" in st.secrets:
+            err = st.session_state.get("_gsheet_error", "неизвестная ошибка")
+            return "error", f"Ошибка Sheets: {err}"
+    except Exception as exc:
+        return "csv", f"Локальный CSV ({exc})"
+    return "csv", "Локальный CSV (secrets не настроены)"
+
+def _records_to_dataframe(records):
+    df = pd.DataFrame(records)
+    df.columns = [str(c).strip() for c in df.columns]
+    if "is_verified" not in df.columns:
+        df["is_verified"] = False
+    df["is_verified"] = _parse_verified(df["is_verified"])
+    if "likes" in df.columns:
+        df["likes"] = pd.to_numeric(df["likes"], errors="coerce").fillna(0).astype(int)
+    else:
+        df["likes"] = 0
+    df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+    df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+    if "asphalt_quality" in df.columns:
+        df["asphalt_quality"] = pd.to_numeric(df["asphalt_quality"], errors="coerce").fillna(3).astype(int)
+    else:
+        df["asphalt_quality"] = 3
+    if "length_km" in df.columns:
+        df["length_km"] = pd.to_numeric(df["length_km"], errors="coerce")
+    return df
+
 
 def load_tracks():
     """Загружает трассы из Google Sheets, при недоступности — из CSV."""
@@ -49,28 +125,41 @@ def load_tracks():
     if ws is not None:
         try:
             data = ws.get_all_records()
+            st.session_state["_sheets_row_count"] = len(data)
             if data:
-                df = pd.DataFrame(data)
-                df["is_verified"] = df["is_verified"].astype(str).str.lower().isin(["true", "1", "yes"])
-                df["likes"] = pd.to_numeric(df["likes"], errors="coerce").fillna(0).astype(int)
-                df["lat"]   = pd.to_numeric(df["lat"],   errors="coerce")
-                df["lon"]   = pd.to_numeric(df["lon"],   errors="coerce")
+                df = _records_to_dataframe(data)
+                st.session_state["_data_source"] = f"Google Sheets → «{ws.title}»"
+                st.session_state["_load_tracks_error"] = None
                 return df
-        except Exception:
-            pass
-    # Резерв: локальный CSV
+            st.session_state["_load_tracks_error"] = "Таблица подключена, но данных нет (только заголовки)"
+        except Exception as exc:
+            st.session_state["_load_tracks_error"] = str(exc)
+    else:
+        st.session_state["_sheets_row_count"] = None
+
+    # Резерв: локальный CSV — здесь нет ваших черновиков из Google Таблицы!
     if os.path.exists(TRACKS_FILE):
         df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
         if "is_verified" not in df.columns:
             df["is_verified"] = True
+        else:
+            df["is_verified"] = _parse_verified(df["is_verified"])
         if "likes" not in df.columns:
             df["likes"] = 0
+        st.session_state["_data_source"] = "⚠️ локальный CSV (Sheets не прочитан — см. ошибку выше)"
         return df
+    st.session_state["_data_source"] = "пусто"
     return pd.DataFrame(columns=COLUMNS)
+
+def _sheet_value(value):
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    return str(value) if value is not None else ""
+
 
 def save_track(track_dict):
     """Добавляет одну трассу в Google Sheets (или в CSV как резерв)."""
-    row = [str(track_dict.get(c, "")) for c in COLUMNS]
+    row = [_sheet_value(track_dict.get(c, "")) for c in COLUMNS]
     ws = get_gsheet()
     if ws is not None:
         try:
@@ -91,7 +180,7 @@ def update_track_field(track_name, field, value):
             col_idx = COLUMNS.index(field) + 1   # gspread 1-based
             cell = ws.find(track_name, in_column=1)
             if cell:
-                ws.update_cell(cell.row, col_idx, value)
+                ws.update_cell(cell.row, col_idx, _sheet_value(value))
                 return
         except Exception:
             pass
@@ -398,7 +487,7 @@ def init_seed():
         if ws is not None:
             try:
                 # Записываем заголовки + все строки одним вызовом
-                rows = [COLUMNS] + [[str(t.get(c, "")) for c in COLUMNS] for t in SEED_TRACKS]
+                rows = [COLUMNS] + [[_sheet_value(t.get(c, "")) for c in COLUMNS] for t in SEED_TRACKS]
                 ws.clear()
                 ws.update("A1", rows)
                 return
@@ -464,7 +553,7 @@ st.write("---")
 # ---------------------------------------------------------
 st.markdown('<div class="section-label">🗺️ Живой GPS-навигатор трасс</div>', unsafe_allow_html=True)
 
-col_f1, col_f2, col_f3, col_add = st.columns([1, 1.3, 1, 0.6])
+col_f1, col_f2, col_f3, col_search, col_add = st.columns([1, 1.2, 0.9, 1.1, 0.6])
 
 with col_f1:
     min_rating = st.slider("⭐ Мин. оценка асфальта:", 1, 5, 3)
@@ -481,6 +570,9 @@ with col_f3:
         "Показ трасс:",
         ["Все подтвержденные трассы", "Показать также черновики/новые"]
     )
+
+with col_search:
+    search_query = st.text_input("🔍 Поиск", placeholder="Название или регион...")
 
 with col_add:
     st.write("")
@@ -543,6 +635,38 @@ filtered_tracks = tracks_df[
 ]
 if show_mode == "Все подтвержденные трассы":
     filtered_tracks = filtered_tracks[filtered_tracks["is_verified"] == True]
+
+if search_query.strip():
+    q = search_query.strip().lower()
+    filtered_tracks = filtered_tracks[
+        filtered_tracks["name"].str.lower().str.contains(q, na=False) |
+        filtered_tracks["city"].str.lower().str.contains(q, na=False)
+    ]
+
+verified_count = int(filtered_tracks[filtered_tracks["is_verified"] == True].shape[0]) if not filtered_tracks.empty else 0
+total_km = float(filtered_tracks["length_km"].sum()) if not filtered_tracks.empty else 0.0
+region_count = filtered_tracks["city"].nunique() if not filtered_tracks.empty else 0
+
+st.markdown(f"""
+<div style="display:flex; flex-wrap:wrap; gap:0.6rem; margin:0.4rem 0 0.8rem;">
+  <span style="background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.25);
+      color:#FCA5A5; padding:0.35rem 0.75rem; border-radius:999px; font-size:0.78rem; font-weight:700;">
+    📍 {len(filtered_tracks)} трасс на карте
+  </span>
+  <span style="background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.25);
+      color:#93C5FD; padding:0.35rem 0.75rem; border-radius:999px; font-size:0.78rem; font-weight:700;">
+    ✅ {verified_count} проверенных
+  </span>
+  <span style="background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.25);
+      color:#6EE7B7; padding:0.35rem 0.75rem; border-radius:999px; font-size:0.78rem; font-weight:700;">
+    📏 {total_km:.1f} км суммарно
+  </span>
+  <span style="background:rgba(148,163,184,0.1); border:1px solid rgba(148,163,184,0.2);
+      color:#94A3B8; padding:0.35rem 0.75rem; border-radius:999px; font-size:0.78rem; font-weight:700;">
+    🗺️ {region_count} регионов
+  </span>
+</div>
+""", unsafe_allow_html=True)
 
 # Initialize selection session state
 if "clicked_track_name" not in st.session_state:
@@ -717,6 +841,9 @@ with col_spot_right:
 
         # Stars for asphalt quality
         stars = "⭐" * int(track_info['asphalt_quality']) + "☆" * (5 - int(track_info['asphalt_quality']))
+        lat, lon = float(track_info["lat"]), float(track_info["lon"])
+        yandex_url = f"https://yandex.ru/maps/?pt={lon},{lat}&z=15&l=map"
+        google_url = f"https://www.google.com/maps?q={lat},{lon}"
 
         html_card = f"""
 <div style="background:linear-gradient(145deg,#161F30,#111827); border:1px solid rgba(255,255,255,0.07);
@@ -788,13 +915,31 @@ with col_spot_right:
   </div>
 
   <div style="background:rgba(239,68,68,0.07); border:1px solid rgba(239,68,68,0.15);
-      border-radius:10px; padding:0.75rem;">
+      border-radius:10px; padding:0.75rem; margin-bottom:0.6rem;">
     <p style="color:#FCA5A5; font-size:0.85rem; line-height:1.55; margin:0; font-family:'Inter',sans-serif;">
       <i class="fa-solid fa-circle-info" style="color:#EF4444; margin-right:5px;"></i>{wheel_recommendation}
     </p>
   </div>
 
-  <div style="margin-top:0.7rem; text-align:right; color:#334155; font-size:0.75rem; font-family:'Inter',sans-serif;">
+  <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.5rem;">
+    <a href="{yandex_url}" target="_blank" rel="noopener noreferrer"
+       style="text-decoration:none; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.35);
+       color:#FCA5A5; padding:0.45rem 0.85rem; border-radius:8px; font-size:0.75rem; font-weight:700;
+       font-family:'Inter',sans-serif;">
+      <i class="fa-solid fa-map-location-dot"></i> Яндекс.Карты
+    </a>
+    <a href="{google_url}" target="_blank" rel="noopener noreferrer"
+       style="text-decoration:none; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.3);
+       color:#93C5FD; padding:0.45rem 0.85rem; border-radius:8px; font-size:0.75rem; font-weight:700;
+       font-family:'Inter',sans-serif;">
+      <i class="fa-brands fa-google"></i> Google Maps
+    </a>
+    <span style="color:#475569; font-size:0.72rem; align-self:center; font-family:'Inter',sans-serif;">
+      GPS: {lat:.5f}, {lon:.5f}
+    </span>
+  </div>
+
+  <div style="margin-top:0.2rem; text-align:right; color:#334155; font-size:0.75rem; font-family:'Inter',sans-serif;">
     <i class="fa-solid fa-user-check" style="margin-right:4px;"></i>Добавил:
     <span style="color:#34D399; font-weight:600;">@{track_info['contributor']}</span>
   </div>
@@ -809,12 +954,49 @@ col_foo_left, col_foo_right = st.columns([4, 1.2])
 
 with col_foo_right:
     with st.expander("🛠️ Модерация базы (для SMM)"):
-        SECURE_PASSWORD = st.secrets.get("admin_password", "shamov2026")
+        # Источник данных — видно сразу, без пароля
+        _data_src = st.session_state.get("_data_source", "—")
+        if "Google Sheets" in str(_data_src):
+            st.success(f"📂 {_data_src} · строк в таблице: {st.session_state.get('_sheets_row_count', '?')}")
+        elif "CSV" in str(_data_src):
+            st.warning(
+                f"📂 {_data_src}\n\n"
+                "Сайт **не читает** вашу Google Таблицу и показывает старый CSV из кода. "
+                "Черновики из Sheets поэтому не видны."
+            )
+        else:
+            st.info(f"📂 {_data_src}")
+
+        status_code, status_text = sheets_status()
+        if status_code == "connected":
+            st.success(f"🟢 {status_text}")
+            if st.session_state.get("_active_sheet"):
+                st.caption(f"Активный лист: **{st.session_state['_active_sheet']}**")
+            if st.session_state.get("_sheet_fallback"):
+                st.warning(st.session_state["_sheet_fallback"])
+        elif status_code == "error":
+            st.error(f"🔴 {status_text}")
+        else:
+            st.info(f"🟡 {status_text}")
+
+        if st.session_state.get("_load_tracks_error"):
+            st.warning(f"Ошибка чтения Sheets: {st.session_state['_load_tracks_error']}")
+
+        if st.button("🔄 Обновить данные", key="reload_tracks"):
+            st.rerun()
+
+        SECURE_PASSWORD = _admin_password()
         admin_pass = st.text_input("Введите пароль модератора:", type="password", key="sec_admin_pass")
         st.caption("ℹ️ *После ввода пароля нажмите **Enter**.*")
         if admin_pass == SECURE_PASSWORD:
             st.success("Доступ разрешен!")
-            unverified_df = tracks_df[tracks_df["is_verified"] == False]
+            moderation_df = load_tracks()
+            drafts_count = int((~moderation_df["is_verified"]).sum()) if not moderation_df.empty else 0
+            st.caption(
+                f"📊 {st.session_state.get('_data_source', '—')} · "
+                f"всего записей: **{len(moderation_df)}** · черновиков: **{drafts_count}**"
+            )
+            unverified_df = moderation_df[~moderation_df["is_verified"]]
             if unverified_df.empty:
                 st.info("🎉 Все трассы проверены! Новых черновиков нет.")
             else:
