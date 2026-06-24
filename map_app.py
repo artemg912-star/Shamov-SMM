@@ -544,7 +544,7 @@ with col_spot_left:
         index=default_idx
     )
 
-    # BUG FIX #3: Dynamic leaderboard computed from CSV
+    # Dynamic leaderboard computed from CSV (all inline styles — no CSS classes)
     verified_tracks = tracks_df[tracks_df["is_verified"] == True].copy()
     leaderboard = (
         verified_tracks.groupby("contributor")
@@ -557,22 +557,25 @@ with col_spot_left:
     crowns = ["👑", "🛡️", "🚴"]
 
     rows_html = ""
-    for i, row in leaderboard.iterrows():
+    for i, (_, row) in enumerate(leaderboard.iterrows()):
         medal = medals[i] if i < 3 else "•"
         crown = crowns[i] if i < 3 else ""
+        border = "border-bottom:1px solid rgba(255,255,255,0.05);" if i < len(leaderboard) - 1 else ""
         rows_html += f"""
-        <div class="sheriff-row">
-            <span style="font-size:1rem;">{medal}</span>
-            <span style="color:#F1F5F9; font-size:0.82rem; font-weight:600; flex:1;">@{row['contributor']}</span>
-            <span style="color:#64748B; font-size:0.75rem;">{row['posts']} пост · <b style="color:#94A3B8">{row['total_km']:.1f} км</b></span>
-            <span style="font-size:0.85rem;">{crown}</span>
+        <div style="display:flex; align-items:center; gap:0.5rem; padding:0.45rem 0; {border}">
+            <span style="font-size:1rem; min-width:1.2rem;">{medal}</span>
+            <span style="color:#F1F5F9; font-size:0.82rem; font-weight:600; flex:1; font-family:'Inter',sans-serif;">@{row['contributor']}</span>
+            <span style="color:#64748B; font-size:0.75rem; font-family:'Inter',sans-serif;">{row['posts']} пост · <b style="color:#94A3B8">{row['total_km']:.1f} км</b></span>
+            <span style="font-size:0.85rem; min-width:1.2rem; text-align:right;">{crown}</span>
         </div>"""
 
     st.markdown(f"""
-    <div class="card-block" style="margin-top: 10px;">
-        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">
+    <div style="background:linear-gradient(145deg,#161F30,#111827); border:1px solid rgba(255,255,255,0.06);
+        border-radius:16px; padding:1.1rem 1.25rem; margin-top:10px;
+        box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.65rem;">
             <span style="font-size:1.1rem;">🏆</span>
-            <span style="color:#34D399; font-weight:700; font-size:0.95rem;">Рейтинг Шерифов Трасс</span>
+            <span style="color:#34D399; font-weight:700; font-size:0.95rem; font-family:'Inter',sans-serif;">Рейтинг Шерифов Трасс</span>
         </div>
         {rows_html}
     </div>
