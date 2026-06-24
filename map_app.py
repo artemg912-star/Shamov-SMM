@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import requests
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime, date
 
 # Set Page Config (Full width, collapsed sidebar)
@@ -12,8 +14,109 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# File path for storing tracks database
-TRACKS_FILE = "rollerski_tracks_v2.csv"
+# ---------------------------------------------------------
+# GOOGLE SHEETS CONNECTION
+# Fallback to local CSV if secrets not configured yet
+# ---------------------------------------------------------
+TRACKS_FILE = "rollerski_tracks_v2.csv"   # резервный локальный файл
+SHEET_NAME  = "shamov_tracks"              # имя листа в Google Таблице
+
+COLUMNS = [
+    "name", "city", "lat", "lon", "asphalt_quality", "length_km",
+    "safety", "description", "contributor", "elevation_drop_m",
+    "max_grade_pct", "climb_length_m", "difficulty_color", "is_verified", "likes"
+]
+
+def get_gsheet():
+    """Возвращает объект worksheet или None если secrets не настроены."""
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(dict(creds_dict), scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet_url = st.secrets["gsheets"]["url"]
+        spreadsheet = client.open_by_url(sheet_url)
+        return spreadsheet.worksheet(SHEET_NAME)
+    except Exception:
+        return None
+
+def load_tracks():
+    """Загружает трассы из Google Sheets, при недоступности — из CSV."""
+    ws = get_gsheet()
+    if ws is not None:
+        try:
+            data = ws.get_all_records()
+            if data:
+                df = pd.DataFrame(data)
+                df["is_verified"] = df["is_verified"].astype(str).str.lower().isin(["true", "1", "yes"])
+                df["likes"] = pd.to_numeric(df["likes"], errors="coerce").fillna(0).astype(int)
+                df["lat"]   = pd.to_numeric(df["lat"],   errors="coerce")
+                df["lon"]   = pd.to_numeric(df["lon"],   errors="coerce")
+                return df
+        except Exception:
+            pass
+    # Резерв: локальный CSV
+    if os.path.exists(TRACKS_FILE):
+        df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
+        if "is_verified" not in df.columns:
+            df["is_verified"] = True
+        if "likes" not in df.columns:
+            df["likes"] = 0
+        return df
+    return pd.DataFrame(columns=COLUMNS)
+
+def save_track(track_dict):
+    """Добавляет одну трассу в Google Sheets (или в CSV как резерв)."""
+    row = [str(track_dict.get(c, "")) for c in COLUMNS]
+    ws = get_gsheet()
+    if ws is not None:
+        try:
+            ws.append_row(row, value_input_option="USER_ENTERED")
+            return
+        except Exception:
+            pass
+    # Резерв: CSV
+    df = load_tracks()
+    df = pd.concat([df, pd.DataFrame([track_dict])], ignore_index=True)
+    df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
+
+def update_track_field(track_name, field, value):
+    """Обновляет одно поле трассы по имени в Google Sheets (или CSV)."""
+    ws = get_gsheet()
+    if ws is not None:
+        try:
+            col_idx = COLUMNS.index(field) + 1   # gspread 1-based
+            cell = ws.find(track_name, in_column=1)
+            if cell:
+                ws.update_cell(cell.row, col_idx, value)
+                return
+        except Exception:
+            pass
+    # Резерв: CSV
+    df = load_tracks()
+    idx = df[df["name"] == track_name].index
+    if not idx.empty:
+        df.loc[idx[0], field] = value
+        df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
+
+def delete_track(track_name):
+    """Удаляет трассу по имени из Google Sheets (или CSV)."""
+    ws = get_gsheet()
+    if ws is not None:
+        try:
+            cell = ws.find(track_name, in_column=1)
+            if cell:
+                ws.delete_rows(cell.row)
+                return
+        except Exception:
+            pass
+    # Резерв: CSV
+    df = load_tracks()
+    df = df[df["name"] != track_name]
+    df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
 
 # Load FontAwesome CDN for modern vector icons in HTML cards
 st.markdown('<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">', unsafe_allow_html=True)
@@ -194,125 +297,119 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# SEED TRACKS — ONLY IF CSV DOES NOT EXIST (BUG FIX #1)
+# SEED DATA — заполняется только если таблица/CSV пустые
 # ---------------------------------------------------------
-def init_tracks():
-    """Initialize the CSV only once — never overwrite user-added tracks."""
-    if os.path.exists(TRACKS_FILE):
-        return   # ← FIX: не удалять существующий файл!
+SEED_TRACKS = [
+    {
+        "name": "ЛБК «Перекоп»",
+        "city": "Кировская область, Кирово-Чепецк",
+        "lat": 58.5205, "lon": 50.0543,
+        "asphalt_quality": 5, "length_km": 5.0,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Профессиональная трасса в Кирово-Чепецке с серьёзным рельефом. Крутые спуски, длинные подъёмы и качественный асфальт. Отличный вариант для интенсивных тренировок.",
+        "contributor": "SMM SHAMOV",
+        "elevation_drop_m": 110, "max_grade_pct": 18, "climb_length_m": 1200,
+        "difficulty_color": "⚪ Профи (Белая)", "is_verified": True, "likes": 124
+    },
+    {
+        "name": "Трасса им. Ларисы Лазутиной (Одинцово)",
+        "city": "Московская область, Одинцово",
+        "lat": 55.6917, "lon": 37.2478,
+        "asphalt_quality": 5, "length_km": 6.0,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Превосходная роллерная трасса в сосновом лесу. Тяжёлый рабочий рельеф, скоростные спуски со светофорами безопасности. Идеальна для коньковых тренировок.",
+        "contributor": "лыжник_одинцово",
+        "elevation_drop_m": 75, "max_grade_pct": 12, "climb_length_m": 800,
+        "difficulty_color": "🔴 Сложная (Красная)", "is_verified": True, "likes": 98
+    },
+    {
+        "name": "УТЦ «Кавголово» (НГУ им. Лесгафта)",
+        "city": "Ленинградская область, Токсово",
+        "lat": 60.1581, "lon": 30.5186,
+        "asphalt_quality": 5, "length_km": 3.0,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Профессиональный биатлонный центр. Крутые виражи, отличный накат и жёсткие подъёмы. Кататься рекомендуется только в шлеме!",
+        "contributor": "spb_skier",
+        "elevation_drop_m": 60, "max_grade_pct": 15, "climb_length_m": 500,
+        "difficulty_color": "⚪ Профи (Белая)", "is_verified": True, "likes": 84
+    },
+    {
+        "name": "ОЦСП «Жемчужина Сибири»",
+        "city": "Тюменская область, Тюмень",
+        "lat": 57.0016, "lon": 65.2536,
+        "asphalt_quality": 5, "length_km": 7.5,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Один из лучших лыжно-биатлонных комплексов страны. Широкая трасса, идеальный асфальт, длинный круг. Подходит для накатывания больших летних объёмов.",
+        "contributor": "siberia_biathlon",
+        "elevation_drop_m": 45, "max_grade_pct": 8, "climb_length_m": 600,
+        "difficulty_color": "🔵 Средняя (Синяя)", "is_verified": True, "likes": 76
+    },
+    {
+        "name": "ОУСЦ «Планерная» (Химки)",
+        "city": "Московская область, Химки",
+        "lat": 55.9184, "lon": 37.3516,
+        "asphalt_quality": 4, "length_km": 2.5,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Хорошая тренировочная трасса на севере Подмосковья. Рельеф средней сложности, асфальт рабочий, но местами бывает листва и ветки.",
+        "contributor": "msk_skate",
+        "elevation_drop_m": 30, "max_grade_pct": 7, "climb_length_m": 400,
+        "difficulty_color": "🔵 Средняя (Синяя)", "is_verified": True, "likes": 43
+    },
+    {
+        "name": "ЛБК «Ангарский»",
+        "city": "Иркутская область, Ангарск",
+        "lat": 52.5401, "lon": 103.8860,
+        "asphalt_quality": 4, "length_km": 2.5,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Освещённая трасса для тренировок сибиряков. Асфальт качественный, подъёмы плавные, подходит для любителей.",
+        "contributor": "baikal_skier",
+        "elevation_drop_m": 25, "max_grade_pct": 5, "climb_length_m": 300,
+        "difficulty_color": "🔵 Средняя (Синяя)", "is_verified": True, "likes": 39
+    },
+    {
+        "name": "Парк «Крылатские холмы» (Москва)",
+        "city": "Москва, Крылатское",
+        "lat": 55.7621, "lon": 37.4243,
+        "asphalt_quality": 4, "length_km": 4.2,
+        "safety": "🔴 Открытая дорога",
+        "description": "Олимпийская велотрасса. Бешеный рельеф, огромные скорости на спусках. Будьте предельно осторожны — тормозить негде, а на трассе часто гуляют люди!",
+        "contributor": "pro_skier_moscow",
+        "elevation_drop_m": 120, "max_grade_pct": 16, "climb_length_m": 1500,
+        "difficulty_color": "⚪ Профи (Белая)", "is_verified": True, "likes": 115
+    },
+    {
+        "name": "Трасса «Ветлужанка»",
+        "city": "Красноярск",
+        "lat": 56.0125, "lon": 92.7483,
+        "asphalt_quality": 3, "length_km": 3.0,
+        "safety": "🟢 Полностью закрытая",
+        "description": "Лесная тренировочная трасса. Асфальт местами неровный (крупное зерно), отлично подходит для тренировок на мягком каучуке Shamov 02-1.",
+        "contributor": "krsk_ski",
+        "elevation_drop_m": 20, "max_grade_pct": 4, "climb_length_m": 200,
+        "difficulty_color": "🟢 Простая (Зеленая)", "is_verified": True, "likes": 27
+    },
+]
 
-    real_tracks = [
-        {
-            "name": "ЛБК «Перекоп» 🏆",
-            "city": "Кировская область, Кирово-Чепецк",
-            "lat": 58.5205, "lon": 50.0543,
-            "asphalt_quality": 5, "length_km": 5.0,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Легендарная профессиональная трасса, где регулярно проходят этапы Кубка России. Крутые спуски, серьезные подъемы и безупречный асфальт.",
-            "contributor": "SMM SHAMOV",
-            "elevation_drop_m": 110, "max_grade_pct": 18, "climb_length_m": 1200,
-            "difficulty_color": "⚪ Профи (Белая)",
-            "is_verified": True, "likes": 124
-        },
-        {
-            "name": "Трасса им. Ларисы Лазутиной (Одинцово)",
-            "city": "Московская область, Одинцово",
-            "lat": 55.6917, "lon": 37.2478,
-            "asphalt_quality": 5, "length_km": 6.0,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Превосходная роллерная трасса в сосновом лесу. Имеет тяжелый рабочий рельеф, скоростные спуски со светофорами безопасности. Идеальна для коньковых тренировок.",
-            "contributor": "лыжник_одинцово",
-            "elevation_drop_m": 75, "max_grade_pct": 12, "climb_length_m": 800,
-            "difficulty_color": "🔴 Сложная (Красная)",
-            "is_verified": True, "likes": 98
-        },
-        {
-            "name": "УТЦ «Кавголово» (НГУ им. Лесгафта)",
-            "city": "Ленинградская область, Токсово",
-            "lat": 60.1581, "lon": 30.5186,
-            "asphalt_quality": 5, "length_km": 3.0,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Профессиональный биатлонный центр. Трасса имеет крутые виражи, отличный накат и жесткие подъемы. Катать рекомендуется только в шлеме!",
-            "contributor": "spb_skier",
-            "elevation_drop_m": 60, "max_grade_pct": 15, "climb_length_m": 500,
-            "difficulty_color": "⚪ Профи (Белая)",
-            "is_verified": True, "likes": 84
-        },
-        {
-            "name": "ОЦСП «Жемчужина Сибири»",
-            "city": "Тюменская область, Тюмень",
-            "lat": 57.0016, "lon": 65.2536,
-            "asphalt_quality": 5, "length_km": 7.5,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Один из лучших лыжно-биатлонных комплексов мира. Широкая трасса, идеальный асфальт, длинный круг. Подходит для накатывания больших летних объемов.",
-            "contributor": "siberia_biathlon",
-            "elevation_drop_m": 45, "max_grade_pct": 8, "climb_length_m": 600,
-            "difficulty_color": "🔵 Средняя (Синяя)",
-            "is_verified": True, "likes": 76
-        },
-        {
-            "name": "ОУСЦ «Планерная» (Химки)",
-            "city": "Московская область, Химки",
-            "lat": 55.9184, "lon": 37.3516,
-            "asphalt_quality": 4, "length_km": 2.5,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Хорошая тренировочная трасса на севере Подмосковья. Есть рельеф средней сложности, асфальт рабочий, но местами бывает листва и веточки.",
-            "contributor": "msk_skate",
-            "elevation_drop_m": 30, "max_grade_pct": 7, "climb_length_m": 400,
-            "difficulty_color": "🔵 Средняя (Синяя)",
-            "is_verified": True, "likes": 43
-        },
-        {
-            "name": "ЛБК «Ангарский»",
-            "city": "Иркутская область, Ангарск",
-            "lat": 52.5401, "lon": 103.8860,
-            "asphalt_quality": 4, "length_km": 2.5,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Хорошая освещенная трасса для тренировок сибиряков. Асфальт качественный, подъемы плавные, подходит для любителей.",
-            "contributor": "baikal_skier",
-            "elevation_drop_m": 25, "max_grade_pct": 5, "climb_length_m": 300,
-            "difficulty_color": "🔵 Средняя (Синяя)",
-            "is_verified": True, "likes": 39
-        },
-        {
-            "name": "Парк «Крылатские холмы» (Москва)",
-            "city": "Москва, Крылатское",
-            "lat": 55.7621, "lon": 37.4243,
-            "asphalt_quality": 4, "length_km": 4.2,
-            "safety": "🔴 Открытая дорога",
-            "description": "Олимпийская велотрасса. Бешеный рельеф, огромные скорости на спусках. Будьте предельно осторожны — тормозить негде, а на трассе часто гуляют люди!",
-            "contributor": "pro_skier_moscow",
-            "elevation_drop_m": 120, "max_grade_pct": 16, "climb_length_m": 1500,
-            "difficulty_color": "⚪ Профи (Белая)",
-            "is_verified": True, "likes": 115
-        },
-        {
-            "name": "Трасса «Ветлужанка»",
-            "city": "Красноярск",
-            "lat": 56.0125, "lon": 92.7483,
-            "asphalt_quality": 3, "length_km": 3.0,
-            "safety": "🟢 Полностью закрытая",
-            "description": "Лесная тренировочная трасса. Асфальт местами неровный (крупное зерно), отлично подходит для тренировок на мягком гасящем каучуке Shamov 02-1.",
-            "contributor": "krsk_ski",
-            "elevation_drop_m": 20, "max_grade_pct": 4, "climb_length_m": 200,
-            "difficulty_color": "🟢 Простая (Зеленая)",
-            "is_verified": True, "likes": 27
-        }
-    ]
-    df = pd.DataFrame(real_tracks)
-    df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
+def init_seed():
+    """Заполняет базу начальными данными только если она пуста."""
+    df = load_tracks()
+    if df.empty:
+        ws = get_gsheet()
+        if ws is not None:
+            try:
+                # Записываем заголовки + все строки одним вызовом
+                rows = [COLUMNS] + [[str(t.get(c, "")) for c in COLUMNS] for t in SEED_TRACKS]
+                ws.clear()
+                ws.update("A1", rows)
+                return
+            except Exception:
+                pass
+        # Резерв: CSV
+        pd.DataFrame(SEED_TRACKS).to_csv(TRACKS_FILE, index=False, encoding="utf-8")
 
-init_tracks()
-
-def load_tracks():
-    df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
-    if "is_verified" not in df.columns:
-        df["is_verified"] = True
-    if "likes" not in df.columns:
-        df["likes"] = 0
-    return df
-
+init_seed()
 tracks_df = load_tracks()
+
 
 # ---------------------------------------------------------
 # DIFFICULTY ALGORITHM
@@ -434,9 +531,7 @@ with col_add:
                     "difficulty_color": calculated_color,
                     "is_verified": False, "likes": 0
                 }
-                disk_df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
-                disk_df = pd.concat([disk_df, pd.DataFrame([new_track])], ignore_index=True)
-                disk_df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
+                save_track(new_track)
                 st.success("🎉 Черновик добавлен! Пройдите верификацию в детальном обзоре.")
                 st.balloons()
                 st.rerun()
@@ -581,13 +676,10 @@ with col_spot_right:
         with col_act1:
             like_key = f"like_f_{track_info['name']}"
             if st.button(f"👍 Проголосовать ({track_info['likes']})", key=like_key):
-                disk_df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
-                idx = disk_df[disk_df["name"] == track_info["name"]].index
-                if not idx.empty:
-                    disk_df.loc[idx[0], "likes"] += 1
-                    disk_df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
-                    st.success("Спасибо за голос!")
-                    st.rerun()
+                new_likes = int(track_info['likes']) + 1
+                update_track_field(track_info["name"], "likes", new_likes)
+                st.success("Спасибо за голос!")
+                st.rerun()
 
         with col_act2:
             if not track_info["is_verified"]:
@@ -596,14 +688,10 @@ with col_spot_right:
                     st.button("📍 Подтвердить геолокацию (Я на месте!)", key=f"geo_verify_{track_info['name']}")
                     st.file_uploader("Загрузите 1 реальное фото покрытия:", type=["jpg","jpeg","png"], key=f"photo_{track_info['name']}")
                     if st.button("🔥 Активировать на общую карту", key=f"pub_final_{track_info['name']}"):
-                        disk_df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
-                        idx = disk_df[disk_df["name"] == track_info["name"]].index
-                        if not idx.empty:
-                            disk_df.loc[idx[0], "is_verified"] = True
-                            disk_df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
-                            st.success("🎉 Трасса проверена и опубликована!")
-                            st.balloons()
-                            st.rerun()
+                        update_track_field(track_info["name"], "is_verified", True)
+                        st.success("🎉 Трасса проверена и опубликована!")
+                        st.balloons()
+                        st.rerun()
             else:
                 st.markdown("<span style='color:#A3E635; font-weight:700; font-size:0.9rem;'><i class='fa-solid fa-circle-check'></i> Проверенная трасса сообщества</span>", unsafe_allow_html=True)
 
@@ -737,18 +825,12 @@ with col_foo_right:
                     col_adm_b1, col_adm_b2 = st.columns(2)
                     with col_adm_b1:
                         if st.button("✅ Одобрить", key=f"adm_ok_{row['name']}"):
-                            disk_df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
-                            f_idx = disk_df[disk_df["name"] == row["name"]].index
-                            if not f_idx.empty:
-                                disk_df.loc[f_idx[0], "is_verified"] = True
-                                disk_df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
-                                st.success("Одобрено!")
-                                st.rerun()
+                            update_track_field(row["name"], "is_verified", True)
+                            st.success("Одобрено!")
+                            st.rerun()
                     with col_adm_b2:
                         if st.button("❌ Удалить", key=f"adm_del_{row['name']}"):
-                            disk_df = pd.read_csv(TRACKS_FILE, encoding="utf-8")
-                            disk_df = disk_df[disk_df["name"] != row["name"]]
-                            disk_df.to_csv(TRACKS_FILE, index=False, encoding="utf-8")
+                            delete_track(row["name"])
                             st.warning("Удалено!")
                             st.rerun()
 
