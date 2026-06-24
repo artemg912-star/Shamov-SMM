@@ -544,42 +544,33 @@ with col_spot_left:
         index=default_idx
     )
 
-    # Dynamic leaderboard computed from CSV (all inline styles — no CSS classes)
-    verified_tracks = tracks_df[tracks_df["is_verified"] == True].copy()
-    leaderboard = (
-        verified_tracks.groupby("contributor")
-        .agg(posts=("name", "count"), total_km=("length_km", "sum"))
-        .sort_values("total_km", ascending=False)
-        .reset_index()
+    # Top-3 tracks by likes using native Streamlit (no HTML rendering issues)
+    top_tracks = (
+        tracks_df[tracks_df["is_verified"] == True]
+        .sort_values("likes", ascending=False)
         .head(3)
+        .reset_index(drop=True)
     )
     medals = ["🥇", "🥈", "🥉"]
-    crowns = ["👑", "🛡️", "🚴"]
 
-    rows_html = ""
-    for i, (_, row) in enumerate(leaderboard.iterrows()):
-        medal = medals[i] if i < 3 else "•"
-        crown = crowns[i] if i < 3 else ""
-        border = "border-bottom:1px solid rgba(255,255,255,0.05);" if i < len(leaderboard) - 1 else ""
-        rows_html += f"""
-        <div style="display:flex; align-items:center; gap:0.5rem; padding:0.45rem 0; {border}">
-            <span style="font-size:1rem; min-width:1.2rem;">{medal}</span>
-            <span style="color:#F1F5F9; font-size:0.82rem; font-weight:600; flex:1; font-family:'Inter',sans-serif;">@{row['contributor']}</span>
-            <span style="color:#64748B; font-size:0.75rem; font-family:'Inter',sans-serif;">{row['posts']} пост · <b style="color:#94A3B8">{row['total_km']:.1f} км</b></span>
-            <span style="font-size:0.85rem; min-width:1.2rem; text-align:right;">{crown}</span>
-        </div>"""
-
-    st.markdown(f"""
-    <div style="background:linear-gradient(145deg,#161F30,#111827); border:1px solid rgba(255,255,255,0.06);
-        border-radius:16px; padding:1.1rem 1.25rem; margin-top:10px;
-        box-shadow:0 4px 24px rgba(0,0,0,0.4);">
-        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.65rem;">
-            <span style="font-size:1.1rem;">🏆</span>
-            <span style="color:#34D399; font-weight:700; font-size:0.95rem; font-family:'Inter',sans-serif;">Рейтинг Шерифов Трасс</span>
-        </div>
-        {rows_html}
-    </div>
-    """, unsafe_allow_html=True)
+    with st.container():
+        st.markdown(
+            "<div style='color:#94A3B8; font-size:0.7rem; font-weight:700; "
+            "text-transform:uppercase; letter-spacing:0.1em; margin-bottom:4px;'>"
+            "🔥 Топ трасс по голосам</div>",
+            unsafe_allow_html=True
+        )
+        for i, row in top_tracks.iterrows():
+            col_m, col_n, col_l = st.columns([0.3, 2.5, 0.7])
+            col_m.markdown(medals[i])
+            col_n.markdown(
+                f"<span style='color:#F1F5F9; font-size:0.82rem; font-weight:600;'>{row['name']}</span>",
+                unsafe_allow_html=True
+            )
+            col_l.markdown(
+                f"<span style='color:#EF4444; font-size:0.8rem; font-weight:700;'>👍 {int(row['likes'])}</span>",
+                unsafe_allow_html=True
+            )
 
 with col_spot_right:
     if selected_track_name and selected_track_name != "-- Нет подходящих трасс --":
