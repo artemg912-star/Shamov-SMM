@@ -119,12 +119,27 @@ def _records_to_dataframe(records):
     return df
 
 
+def _fetch_sheet_records(ws):
+    """Читает строки из листа. expected_headers — обход дублей пустых колонок справа."""
+    try:
+        return ws.get_all_records(expected_headers=COLUMNS)
+    except Exception:
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return []
+        records = []
+        for row in rows[1:]:
+            values = (row + [""] * len(COLUMNS))[: len(COLUMNS)]
+            records.append(dict(zip(COLUMNS, values)))
+        return records
+
+
 def load_tracks():
     """Загружает трассы из Google Sheets, при недоступности — из CSV."""
     ws = get_gsheet()
     if ws is not None:
         try:
-            data = ws.get_all_records()
+            data = _fetch_sheet_records(ws)
             st.session_state["_sheets_row_count"] = len(data)
             if data:
                 df = _records_to_dataframe(data)
