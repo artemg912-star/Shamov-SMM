@@ -177,8 +177,7 @@ def init_tracks():
             "city": "Кировская область, Кирово-Чепецк",
             "lat": 58.5205,
             "lon": 50.0543,
-            "asphalt_quality": 5,
-            "length_km": 5.0,
+            "asphalt_quality": 4, # Updated from 5 to 4 stars!
             "safety": "🟢 Полностью закрытая",
             "description": "Легендарная профессиональная трасса, где регулярно проходят этапы Кубка России. Крутые спуски, серьезные подъемы и безупречный асфальт.",
             "contributor": "SMM SHAMOV",
