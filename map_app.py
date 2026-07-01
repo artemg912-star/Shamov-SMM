@@ -509,7 +509,7 @@ header_html = f"""
     <div style="color: #FFFFFF; font-weight: 800; font-size: 1.4rem; font-family: sans-serif; letter-spacing: 0.05em; text-align: center;">GRBNV PROD</div> <!-- Perfectly Centered Title! -->
     <div class="header-sponsor-section" style="display: flex; align-items: center; gap: 12px; justify-content: flex-end;">
         <span style="color: #94A3B8; font-size: 0.8rem; font-weight: 700; font-family: sans-serif; text-transform: uppercase; letter-spacing: 0.08em;">Главный спонсор</span>
-        {"<img src='" + logo_base64 + "' style='max-height: 60px; width: auto; object-fit: contain; vertical-align: middle;'>" if logo_base64 else ""}
+        {"<img src='" + logo_base64 + "' style='max-height: 24px; width: auto; object-fit: contain; vertical-align: middle;'>" if logo_base64 else ""}
     </div>
 </div>
 """
@@ -569,107 +569,38 @@ def geocode_address(address_string):
     return None, None
 
 # ---------------------------------------------------------
-# 1. SIDE-BY-SIDE MAIN LAYOUT (MAP ON LEFT, CARD ON RIGHT)
+# 1. TOP SUBHEADER & UNIFIED HORIZONTAL CONTROL BAR
 # ---------------------------------------------------------
-# Left column gets 57% width, right column gets 43% width.
-col_left, col_right = st.columns([1.3, 1.0], gap="medium")
+st.subheader("🗺️ Живой GPS-Навигатор трасс")
 
-with col_left:
-    st.subheader("🗺️ Живой GPS-Навигатор трасс")
+# Create a clean horizontal filter bar above the columns
+col_filter1, col_filter2, col_filter3 = st.columns([1.5, 1.2, 0.8], gap="medium")
+
+with col_filter1:
     min_rating = st.slider("⭐ Минимальная оценка асфальта (Оценка: 1/5 - 5/5):", 1, 5, 3, key="asph_min_rating_slider")
 
 # Filter database based on slider rating
 filtered_tracks = tracks_df[tracks_df["asphalt_quality"] >= min_rating]
+track_list = list(filtered_tracks["name"].unique()) if not filtered_tracks.empty else ["-- Нет подходящих трасс --"]
 
 # Initialize selection session state
 if "clicked_track_name" not in st.session_state:
     st.session_state.clicked_track_name = ""
 
-with col_left:
-    if filtered_tracks.empty:
-        st.warning("⚠️ Нет трасс, подходящих под выбранные фильтры. Снизьте требования к асфальту!")
-    else:
-        try:
-            import plotly.express as px
-            
-            # Map Rendering (Balanced 500px height!)
-            fig_map = px.scatter_mapbox(
-                filtered_tracks,
-                lat="lat",
-                lon="lon",
-                color="difficulty_color",
-                color_discrete_map={
-                    "🟢 Простая (Зеленая)": "#10B981",
-                    "🔵 Средняя (Синяя)": "#3B82F6",
-                    "🔴 Сложная (Красная)": "#EF4444",
-                    "⚪ Профи (Белая)": "#FFFFFF"
-                },
-                zoom=3,
-                height=650,
-                hover_name="name",
-                hover_data={
-                    "lat": False,
-                    "lon": False,
-                    "city": True,
-                    "length_km": True,
-                    "asphalt_quality": True,
-                    "difficulty_color": True,
-                    "safety": True,
-                    "likes": True
-                },
-                labels={
-                    "city": "📍 Регион / Город",
-                    "length_km": "📏 Длина круга",
-                    "asphalt_quality": "⭐ Оценка асфальта",
-                    "difficulty_color": "🏃‍♂️ Сложность",
-                    "safety": "🛡️ Безопасность",
-                    "likes": "👍 Лайков"
-                }
-            )
-            
-            fig_map.update_layout(
-                mapbox_style="carto-darkmatter",
-                margin={"r":0,"t":0,"l":0,"b":0},
-                coloraxis_showscale=False,
-                showlegend=False
-            )
-            
-            fig_map.update_traces(marker=dict(size=14))
-            
-            select_event = st.plotly_chart(
-                fig_map, 
-                use_container_width=True,
-                config={"scrollZoom": True},
-                on_select="rerun"
-            )
-            
-            # Process Map Clicks (100% ROBUST COORDINATES & NAME MATCHING LOGIC!)
-            if select_event and "selection" in select_event and "points" in select_event["selection"]:
-                points = select_event["selection"]["points"]
-                if len(points) > 0:
-                    clicked_point = points[0]
-                    
-                    # 1. Try to match by hovertext (track name) directly
-                    clicked_name = clicked_point.get("hovertext")
-                    if clicked_name and clicked_name in tracks_df["name"].values:
-                        st.session_state.clicked_track_name = clicked_name
-                    else:
-                        # 2. Fallback: match by exact coordinate lat/lon values
-                        clicked_lat = clicked_point.get("lat")
-                        clicked_lon = clicked_point.get("lon")
-                        if clicked_lat is not None and clicked_lon is not None:
-                            # Find matching track in tracks_df
-                            match = tracks_df[
-                                (np.isclose(tracks_df["lat"], clicked_lat, atol=1e-4)) & 
-                                (np.isclose(tracks_df["lon"], clicked_lon, atol=1e-4))
-                            ]
-                            if not match.empty:
-                                st.session_state.clicked_track_name = match.iloc[0]["name"]
-            
-        except Exception as e:
-            st.error(f"⚠️ Ошибка при работе графического движка: {str(e)}")
+default_idx = 0
+if st.session_state.clicked_track_name in track_list:
+    default_idx = track_list.index(st.session_state.clicked_track_name)
 
-with col_right:
+with col_filter2:
+    selected_track_name = st.selectbox(
+        "🔎 Детальный обзор трассы:",
+        options=track_list,
+        index=default_idx
+    )
+
+with col_filter3:
+    st.write("") # Tiny vertical aligner to match the slider/selectbox heights!
+    st.write("")
     # ➕ THE ONLY POPOVER FORM ON SCREEN - FIXED THE ID DUPLICATION CRASH!
     with st.popover("➕ Нанести трассу", use_container_width=True):
         st.subheader("📝 Нанести новую трассу")
@@ -754,19 +685,96 @@ with col_right:
                     st.balloons()
                     st.rerun()
 
-    # Sync dropdown selection with map clicks seamlessly!
-    track_list = list(filtered_tracks["name"].unique()) if not filtered_tracks.empty else ["-- Нет подходящих трасс --"]
+# ---------------------------------------------------------
+# 2. MAIN SIDE-BY-SIDE EQUAL HEIGHT GRID
+# ---------------------------------------------------------
+col_left, col_right = st.columns([1.3, 1.0], gap="medium")
 
-    default_idx = 0
-    if st.session_state.clicked_track_name in track_list:
-        default_idx = track_list.index(st.session_state.clicked_track_name)
-        
-    selected_track_name = st.selectbox(
-        "🔎 Детальный обзор трассы:",
-        options=track_list,
-        index=default_idx
-    )
+with col_left:
+    if filtered_tracks.empty:
+        st.warning("⚠️ Нет трасс, подходящих под выбранные фильтры. Снизьте требования к асфальту!")
+    else:
+        try:
+            import plotly.express as px
+            
+            # Map Rendering (Height 460px perfectly matches the Spotlight card's visual height!)
+            fig_map = px.scatter_mapbox(
+                filtered_tracks,
+                lat="lat",
+                lon="lon",
+                color="difficulty_color",
+                color_discrete_map={
+                    "🟢 Простая (Зеленая)": "#10B981",
+                    "🔵 Средняя (Синяя)": "#3B82F6",
+                    "🔴 Сложная (Красная)": "#EF4444",
+                    "⚪ Профи (Белая)": "#FFFFFF"
+                },
+                zoom=3,
+                height=465,
+                hover_name="name",
+                hover_data={
+                    "lat": False,
+                    "lon": False,
+                    "city": True,
+                    "length_km": True,
+                    "asphalt_quality": True,
+                    "difficulty_color": True,
+                    "safety": True,
+                    "likes": True
+                },
+                labels={
+                    "city": "📍 Регион / Город",
+                    "length_km": "📏 Длина круга",
+                    "asphalt_quality": "⭐ Оценка асфальта",
+                    "difficulty_color": "🏃‍♂️ Сложность",
+                    "safety": "🛡️ Безопасность",
+                    "likes": "👍 Лайков"
+                }
+            )
+            
+            fig_map.update_layout(
+                mapbox_style="carto-darkmatter",
+                margin={"r":0,"t":0,"l":0,"b":0},
+                coloraxis_showscale=False,
+                showlegend=False
+            )
+            
+            fig_map.update_traces(marker=dict(size=14))
+            
+            select_event = st.plotly_chart(
+                fig_map, 
+                use_container_width=True,
+                config={"scrollZoom": True},
+                on_select="rerun"
+            )
+            
+            # Process Map Clicks (100% ROBUST COORDINATES & NAME MATCHING LOGIC!)
+            if select_event and "selection" in select_event and "points" in select_event["selection"]:
+                points = select_event["selection"]["points"]
+                if len(points) > 0:
+                    clicked_point = points[0]
+                    
+                    # 1. Try to match by hovertext (track name) directly
+                    clicked_name = clicked_point.get("hovertext")
+                    if clicked_name and clicked_name in tracks_df["name"].values:
+                        st.session_state.clicked_track_name = clicked_name
+                    else:
+                        # 2. Fallback: match by exact coordinate lat/lon values
+                        clicked_lat = clicked_point.get("lat")
+                        clicked_lon = clicked_point.get("lon")
+                        if clicked_lat is not None and clicked_lon is not None:
+                            # Find matching track in tracks_df
+                            match = tracks_df[
+                                (np.isclose(tracks_df["lat"], clicked_lat, atol=1e-4)) & 
+                                (np.isclose(tracks_df["lon"], clicked_lon, atol=1e-4))
+                            ]
+                            if not match.empty:
+                                st.session_state.clicked_track_name = match.iloc[0]["name"]
+            
+        except Exception as e:
+            st.error(f"⚠️ Ошибка при работе графического движка: {str(e)}")
 
+with col_right:
     if selected_track_name and selected_track_name != "-- Нет подходящих трасс --":
         track_info = filtered_tracks[filtered_tracks["name"] == selected_track_name].iloc[0]
         
