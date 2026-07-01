@@ -509,7 +509,7 @@ header_html = f"""
     <div style="color: #FFFFFF; font-weight: 800; font-size: 1.4rem; font-family: sans-serif; letter-spacing: 0.05em; text-align: center;">GRBNV PROD</div> <!-- Perfectly Centered Title! -->
     <div class="header-sponsor-section" style="display: flex; align-items: center; gap: 12px; justify-content: flex-end;">
         <span style="color: #94A3B8; font-size: 0.8rem; font-weight: 700; font-family: sans-serif; text-transform: uppercase; letter-spacing: 0.08em;">Главный спонсор</span>
-        {"<img src='" + logo_base64 + "' style='max-height: 42px; width: auto; object-fit: contain; vertical-align: middle;'>" if logo_base64 else ""}
+        {"<img src='" + logo_base64 + "' style='max-height: 60px; width: auto; object-fit: contain; vertical-align: middle;'>" if logo_base64 else ""}
     </div>
 </div>
 """
@@ -605,7 +605,7 @@ with col_left:
                     "⚪ Профи (Белая)": "#FFFFFF"
                 },
                 zoom=3,
-                height=500,
+                height=650,
                 hover_name="name",
                 hover_data={
                     "lat": False,
